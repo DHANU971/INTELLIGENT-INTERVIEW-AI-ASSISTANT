@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interviewer | Live CV Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Poppins', sans-serif; background: linear-gradient(-45deg, #0f172a, #1e1b4b, #312e81, #4c1d95); background-size: 400% 400%; animation: gradientBG 15s ease infinite; }
+        @keyframes gradientBG { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        
+        .glass-panel { background: #1c1f246c; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .glass-bubble-bot { background: rgb(232, 217, 202); color: #020b15; box-shadow: 0 4px 6px -1px rgba(23, 19, 19, 0.99); }
+        .glass-bubble-user { background: linear-gradient(135deg, rgb(83, 76, 92) 0%, #a855f7 100%); color: white; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4); }
+        .modal-overlay { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(12px); transition: all 0.3s ease; z-index: 50; }
+        
+        /* Video Mode Specifics */
+        .video-wrapper { position: relative; width: 100%; height: 100%; border-radius: 1.5rem; overflow: hidden; background: #000; }
+        #user-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        
+        .ai-avatar-circle {
+            width: 100px; height: 100px; border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            box-shadow: 0 0 30px rgba(168, 85, 247, 0.5);
+            display: flex; align-items: center; justify-content: center;
+            animation: breathe 3s infinite ease-in-out;
+            position: absolute; bottom: 120px; right: 20px; z-index: 10; border: 3px solid rgba(255,255,255,0.2);
+        }
+        @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); box-shadow: 0 0 50px rgba(168, 85, 247, 0.8); } }
+        
+        .talking { animation: talk-pulse 0.5s infinite alternate !important; }
+        @keyframes talk-pulse { 0% { transform: scale(1); } 100% { transform: scale(1.15); } }
+
+        /* Subtitles */
+        .subtitle-box {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+        }
+
+        /* LIVE CV HUD STYLES */
+        .cv-hud {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem; padding: 1rem; width: 180px; z-index: 40;
+            transform: translateX(120%); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .cv-hud.active { transform: translateX(0); }
+
+        .stat-bar { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 5px; overflow: hidden; }
+        .stat-fill { height: 100%; transition: width 0.5s ease; }
+        .confidence-fill { background: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }
+        .nervous-fill { background: #f87171; box-shadow: 0 0 10px rgba(248, 113, 113, 0.5); }
+
+        /* CIRCLE CHART FIXES */
+        .circular-chart { display: block; margin: 0 auto; max-width: 80%; max-height: 250px; }
+        .circle-bg { fill: none; stroke: #334155; stroke-width: 3.8; }
+        .circle { fill: none; stroke-width: 2.8; stroke-linecap: round; transition: stroke-dasharray 1s ease-out; }
+        .percentage { fill: #fff; font-family: 'Poppins', sans-serif; font-weight: bold; font-size: 0.5em; text-anchor: middle; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+        .message-enter { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        
+        .mic-active { animation: pulse-red 1.5s infinite; background-color: #ef4444 !important; border-color: #ef4444 !important; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+    </style>
+</head>
+<body class="h-screen w-full flex items-center justify-center p-0 md:p-6 overflow-hidden relative">
+
+    <div id="setup-modal" class="fixed inset-0 flex items-center justify-center p-4 modal-overlay">
+        <div class="bg-gray-900 border border-white/10 rounded-3xl w-full max-w-md p-8 shadow-2xl relative animate-[slideUp_0.4s_ease-out] max-h-[90vh] overflow-y-auto">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg mx-auto mb-4">
+                    <i class="fa-solid fa-sliders text-2xl text-white"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-white">Interview Setup</h2>
+            </div>
+
+            <form id="setup-form" onsubmit="startInterview(event)" class="space-y-4">
+                <div>
+                    <label class="block text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">Interview Mode</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="cursor-pointer">
+                            <input type="radio" name="mode" value="Chat" class="peer sr-only" checked>
+                            <div class="text-center py-3 rounded-xl bg-white/5 border border-white/10 text-gray-400 peer-checked:bg-indigo-600 peer-checked:text-white transition-all hover:bg-white/10">
+                                <i class="fa-solid fa-message mb-1 block"></i> Chat
+                            </div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="mode" value="Video" class="peer sr-only">
+                            <div class="text-center py-3 rounded-xl bg-white/5 border border-white/10 text-gray-400 peer-checked:bg-purple-600 peer-checked:text-white transition-all hover:bg-white/10">
+                                <i class="fa-solid fa-video mb-1 block"></i> Video
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">Target Role</label>
+                    <input type="text" id="role-input" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-indigo-500 focus:outline-none transition" placeholder="e.g. Senior Python Developer" required>
+                </div>
+
+                <div>
+                    <label class="block text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">Focus Topics</label>
+                    <input type="text" id="topics-input" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-indigo-500 focus:outline-none transition text-sm" placeholder="e.g. DSA, React, System Design" required>
+                </div>
+
+                <div>
+                    <label class="block text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">Number of Questions (3-20)</label>
+                    <div class="flex items-center bg-white/5 border border-white/10 rounded-xl p-1">
+                        <input type="range" id="questions-range" min="3" max="20" value="5" class="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mx-3" oninput="document.getElementById('questions-count-display').innerText = this.value">
+                        <span id="questions-count-display" class="bg-indigo-600 text-white text-xs font-bold py-1 px-3 rounded-lg min-w-[30px] text-center">5</span>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">Upload Resume (PDF - Optional)</label>
+                    <input type="file" id="resume-input" accept="application/pdf" class="w-full bg-white/5 border border-white/10 rounded-xl p-2 text-gray-400 text-sm focus:border-indigo-500 focus:outline-none transition file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
+                </div>
+
+                <div>
+                    <label class="block text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">Difficulty</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <label class="cursor-pointer"><input type="radio" name="difficulty" value="Easy" class="peer sr-only"><div class="text-center py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 peer-checked:bg-indigo-600 peer-checked:text-white text-xs font-medium">Easy</div></label>
+                        <label class="cursor-pointer"><input type="radio" name="difficulty" value="Medium" class="peer sr-only" checked><div class="text-center py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 peer-checked:bg-indigo-600 peer-checked:text-white text-xs font-medium">Medium</div></label>
+                        <label class="cursor-pointer"><input type="radio" name="difficulty" value="Hard" class="peer sr-only"><div class="text-center py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 peer-checked:bg-indigo-600 peer-checked:text-white text-xs font-medium">Hard</div></label>
+                    </div>
+                </div>
+
+                <button type="submit" id="start-btn" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3 rounded-xl shadow-lg transition-transform hover:scale-[1.02] mt-2">
+                    Start Session
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="w-full max-w-5xl h-full md:h-[90vh] glass-panel md:rounded-3xl shadow-2xl flex flex-col relative overflow-hidden z-10">
+        
+        <header class="p-5 border-b border-white/10 flex justify-between items-center bg-black/20 flex-shrink-0">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg">
+                    <i class="fa-solid fa-brain text-white text-sm"></i>
+                </div>
+                <div>
+                    <h1 class="font-semibold text-white text-lg tracking-wide">AI Interviewer</h1>
+                    <div class="flex items-center gap-2 text-xs text-indigo-200">
+                        <span id="display-role">Pending...</span>
+                        <span class="w-1 h-1 rounded-full bg-indigo-400"></span>
+                        <span id="display-mode" class="text-indigo-300"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex gap-2 items-center">
+                <button onclick="toggleVoice()" id="voice-toggle-btn" class="flex items-center gap-2 text-xs font-bold text-white/50 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-full transition-all border border-white/5 mr-2">
+                    <i class="fa-solid fa-volume-xmark" id="voice-icon"></i> <span id="voice-text">Voice Off</span>
+                </button>
+
+                <button onclick="generateFeedback()" id="finish-btn" class="flex items-center gap-2 text-xs font-bold text-white bg-green-600 hover:bg-green-500 px-5 py-2 rounded-full transition-all shadow-lg">
+                    <i class="fa-solid fa-check-circle"></i> <span>Finish</span>
+                </button>
+                <button onclick="location.reload()" class="text-xs font-medium text-white/70 hover:text-white bg-white/5 hover:bg-white/10 px-4 py-2 rounded-full transition-all border border-white/5">
+                    <i class="fa-solid fa-power-off"></i>
+                </button>
+            </div>
+        </header>
+
+        <main id="chat-interface" class="flex-1 flex flex-col hidden min-h-0">
+            <div class="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 scroll-smooth" id="chat-container"></div>
+            
+            <div class="p-4 sm:p-6 bg-gradient-to-t from-black/40 to-transparent flex-shrink-0">
+                <form id="chat-form" class="relative group" onsubmit="sendMessage(event)">
+                    <div class="relative flex items-end gap-2 bg-gray-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl">
+                        <button type="button" onclick="toggleMic()" id="chat-mic-btn" class="mb-1 ml-1 h-10 w-10 bg-white/10 hover:bg-white/20 text-white rounded-xl flex items-center justify-center transition-all border border-white/10">
+                            <i class="fa-solid fa-microphone"></i>
+                        </button>
+
+                        <textarea 
+                            id="user-input" 
+                            class="w-full bg-transparent text-white placeholder-gray-400 text-sm md:text-base focus:outline-none p-3 resize-none max-h-[150px] min-h-[50px] scrollbar-hide" 
+                            rows="1" 
+                            placeholder="Type or speak your response..." 
+                            required
+                            onkeydown="if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); document.getElementById('send-btn').click(); }"
+                        ></textarea>
+
+                        <button type="submit" id="send-btn" class="mb-1 mr-1 h-10 w-10 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center transition-all hover:scale-105 shadow-lg">
+                            <i class="fa-solid fa-arrow-up"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </main>
+
+        <main id="video-interface" class="flex-1 flex flex-col hidden min-h-0 p-4 relative">
+            <div class="video-wrapper relative h-full w-full bg-black rounded-2xl border border-white/10 shadow-inner">
+                <video id="user-video" autoplay muted playsinline></video>
+                
+                <canvas id="cv-canvas" class="hidden"></canvas>
+
+                <div id="cv-overlay" class="cv-hud">
+                    <h4 class="text-white/80 text-xs font-bold uppercase tracking-widest mb-3 border-b border-white/10 pb-2">
+                        <i class="fa-solid fa-eye text-indigo-400 mr-1"></i> Live Analysis
+                    </h4>
+                    
+                    <div class="mb-3">
+                        <div class="flex justify-between text-xs text-white mb-1">
+                            <span>Confidence</span>
+                            <span id="conf-val">0%</span>
+                        </div>
+                        <div class="stat-bar"><div id="conf-bar" class="stat-fill confidence-fill" style="width: 0%"></div></div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs text-white mb-1">
+                            <span>Nervousness</span>
+                            <span id="nerv-val">0%</span>
+                        </div>
+                        <div class="stat-bar"><div id="nerv-bar" class="stat-fill nervous-fill" style="width: 0%"></div></div>
+                    </div>
+
+                    <div class="mt-3 pt-2 border-t border-white/10 text-[10px] text-gray-400 text-center">
+                        Detected: <span id="emotion-text" class="text-white font-bold">...</span>
+                    </div>
+                </div>
+                
+                <div class="absolute top-6 left-0 right-0 flex justify-center px-6 z-20">
+                    <div id="ai-subtitle" class="subtitle-box text-indigo-200 px-6 py-3 rounded-2xl text-center text-sm md:text-lg font-medium max-w-3xl shadow-xl border border-white/10 transition-all opacity-0">
+                        AI Question will appear here...
+                    </div>
+                </div>
+
+                <div id="ai-avatar" class="ai-avatar-circle">
+                    <i class="fa-solid fa-robot text-4xl text-white"></i>
+                </div>
+
+                <div class="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-4 py-2 rounded-full text-white text-sm border border-white/10 z-20">
+                    <span id="video-status" class="flex items-center gap-2">
+                        <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span> Initializing...
+                    </span>
+                </div>
+
+                <div class="absolute bottom-24 left-0 right-0 flex justify-center px-6 z-20">
+                    <div id="user-subtitle" class="subtitle-box text-white px-6 py-4 rounded-2xl text-center text-sm md:text-base max-w-3xl shadow-xl border border-white/10 min-h-[60px] flex items-center justify-center">
+                        <span class="text-gray-400 italic">Listening for your answer...</span>
+                    </div>
+                </div>
+
+                <div class="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-4 z-30">
+                    
+                    <button onclick="toggleVideoMic()" id="video-mic-btn" class="w-14 h-14 rounded-full bg-gray-700/80 hover:bg-gray-600/80 border border-white/20 text-white flex items-center justify-center transition-all shadow-lg backdrop-blur-sm group">
+                        <i class="fa-solid fa-microphone-slash text-xl group-hover:scale-110 transition-transform"></i>
+                    </button>
+
+                    <button onclick="submitVideoAnswer()" id="video-submit-btn" class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-transform hover:scale-105 flex items-center gap-2 border border-red-400/30">
+                        <i class="fa-solid fa-paper-plane"></i> Submit Answer
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="feedback-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center p-4">
+        <div class="modal-overlay absolute inset-0" onclick="closeFeedback()"></div>
+        <div class="relative z-[60] bg-gray-900/90 border border-white/10 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col md:flex-row message-enter">
+            <div class="w-full md:w-1/3 bg-indigo-900/20 p-8 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/10">
+                <h2 class="text-white text-xl font-bold mb-6">Performance Score</h2>
+                <svg viewBox="0 0 36 36" class="circular-chart text-green-400" id="score-color">
+                    <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    <path class="circle" id="score-circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" stroke="currentColor" />
+                    <text x="18" y="20.35" class="percentage" id="score-text">0%</text> 
+                </svg>
+                <div class="mt-6 text-center">
+                    <span id="hired-badge" class="px-3 py-1 rounded-full bg-gray-500/20 text-gray-300 text-xs font-bold border border-gray-500/30">PENDING</span>
+                    <p class="text-gray-400 text-xs mt-4" id="feedback-summary">Analysis pending...</p>
+                </div>
+            </div>
+            <div class="w-full md:w-2/3 p-8 text-white">
+                <div class="flex justify-between items-start mb-6">
+                    <div><h3 class="text-2xl font-bold">Feedback Report</h3></div>
+                    <button onclick="closeFeedback()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+                <div class="space-y-6">
+                    <div><h4 class="text-green-400 font-semibold mb-2">Key Strengths</h4><ul id="strengths-list" class="text-sm text-gray-300 space-y-2 pl-4 border-l-2 border-green-500/30"></ul></div>
+                    <div><h4 class="text-yellow-400 font-semibold mb-2">Areas for Improvement</h4><ul id="improvements-list" class="text-sm text-gray-300 space-y-2 pl-4 border-l-2 border-yellow-500/30"></ul></div>
+                    <div class="pt-6 mt-6 border-t border-white/10 flex gap-4"><button onclick="location.reload()" class="px-6 py-3 border border-white/20 hover:bg-white/5 rounded-xl text-white text-sm w-full">Start New Interview</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- GLOBAL VARIABLES ---
+        let currentMode = 'Chat'; 
+        let voiceEnabled = false; 
+        let recognition = null;
+        let isListening = false;
+        let isSpeaking = false;
+        let finalTranscript = ''; // Stores committed text
+        const synthesis = window.speechSynthesis;
+        let cvInterval = null; // Stores the CV Loop Interval
+        
+        // DOM Elements
+        const chatInterface = document.getElementById('chat-interface');
+        const videoInterface = document.getElementById('video-interface');
+        const setupModal = document.getElementById('setup-modal');
+        const chatContainer = document.getElementById('chat-container');
+        const videoStatus = document.getElementById('video-status');
+        const aiSubtitleBox = document.getElementById('ai-subtitle');
+        const userSubtitleBox = document.getElementById('user-subtitle');
+        const aiAvatar = document.getElementById('ai-avatar');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        // --- 1. INITIALIZATION & SETUP ---
+        let preferredVoice = null;
+        function loadVoices() {
+            const voices = synthesis.getVoices();
+            preferredVoice = voices.find(v => v.name.includes("Google US English") || v.name.includes("Zira")) || voices[0];
+        }
+        if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true; 
+            recognition.interimResults = true; 
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                isListening = true;
+                if(currentMode === 'Chat') {
+                    document.getElementById('chat-mic-btn').classList.add('mic-active');
+                }
+                if(currentMode === 'Video') {
+                    updateVideoStatus("Listening...", "text-green-400");
+                    // Mic Button UI
+                    const btn = document.getElementById('video-mic-btn');
+                    if(btn) {
+                        btn.classList.remove('bg-gray-700/80');
+                        btn.classList.add('bg-red-600', 'animate-pulse');
+                        btn.innerHTML = '<i class="fa-solid fa-microphone text-xl"></i>';
+                    }
+                }
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                if(currentMode === 'Chat') document.getElementById('chat-mic-btn').classList.remove('mic-active');
+                
+                if(currentMode === 'Video') {
+                    updateVideoStatus("Paused", "text-gray-400");
+                    // Update Mic Button UI
+                    const btn = document.getElementById('video-mic-btn');
+                    if(btn) {
+                        btn.classList.add('bg-gray-700/80');
+                        btn.classList.remove('bg-red-600', 'animate-pulse');
+                        btn.innerHTML = '<i class="fa-solid fa-microphone-slash text-xl"></i>';
+                    }
+                }
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript + ' ';
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                if(currentMode === 'Chat') {
+                    document.getElementById('user-input').value = finalTranscript + interimTranscript;
+                } else {
+                    const displayText = finalTranscript + interimTranscript;
+                    userSubtitleBox.innerHTML = displayText ? `"${displayText}"` : '<span class="text-gray-400 italic">Listening...</span>';
+                }
+            };
+        }
+
+        async function startInterview(e) {
+            e.preventDefault();
+            
+            const role = document.getElementById('role-input').value;
+            const difficulty = document.querySelector('input[name="difficulty"]:checked').value;
+            currentMode = document.querySelector('input[name="mode"]:checked').value;
+            const questionsCount = document.getElementById('questions-range').value;
+            const resumeFile = document.getElementById('resume-input').files[0];
+            const startBtn = document.getElementById('start-btn');
+            const topics = document.getElementById('topics-input').value;
+
+            startBtn.innerText = "Configuring...";
+            startBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('role', role);
+            formData.append('difficulty', difficulty);
+            formData.append('mode', currentMode);
+            formData.append('max_questions', questionsCount);
+            formData.append('topics', topics);
+            if (resumeFile) formData.append('resume', resumeFile);
+
+            try {
+                const response = await fetch('/configure', { method: 'POST', body: formData });
+
+                if (response.ok) {
+                    document.getElementById('display-role').innerText = role;
+                    document.getElementById('display-mode').innerText = currentMode + " Mode";
+                    
+                    setupModal.style.opacity = '0';
+                    setTimeout(() => { setupModal.style.display = 'none'; }, 300);
+
+                    if (currentMode === 'Chat') {
+                        chatInterface.classList.remove('hidden');
+                        chatInterface.classList.add('flex');
+                        recognition.continuous = false; 
+                        const intro = `Hello! I'm ready to interview you for the **${role}** position. \n\nFocus: **${topics}**. \n\nPlease introduce yourself.`;
+                        addChatMessage(intro, 'bot');
+                        if(voiceEnabled) speakText(intro);
+                    } else {
+                        voiceEnabled = true; 
+                        updateVoiceUI();
+                        document.getElementById('voice-toggle-btn').style.display = 'none';
+
+                        videoInterface.classList.remove('hidden');
+                        videoInterface.classList.add('flex');
+                        startVideoMode(role, topics);
+                    }
+                }
+            } catch (error) {
+                console.error(error);
+                alert("Connection Error. Is backend running?");
+                startBtn.disabled = false;
+            }
+        }
+
+        function toggleVoice() {
+            voiceEnabled = !voiceEnabled;
+            updateVoiceUI();
+            if(!voiceEnabled) synthesis.cancel(); 
+        }
+
+        function updateVoiceUI() {
+            const btn = document.getElementById('voice-toggle-btn');
+            const icon = document.getElementById('voice-icon');
+            const text = document.getElementById('voice-text');
+            if(voiceEnabled) {
+                btn.classList.remove('text-white/50', 'bg-white/5');
+                btn.classList.add('text-white', 'bg-indigo-600', 'border-indigo-500');
+                icon.classList.replace('fa-volume-xmark', 'fa-volume-high');
+                text.innerText = "Voice On";
+            } else {
+                btn.classList.add('text-white/50', 'bg-white/5');
+                btn.classList.remove('text-white', 'bg-indigo-600', 'border-indigo-500');
+                icon.classList.replace('fa-volume-high', 'fa-volume-xmark');
+                text.innerText = "Voice Off";
+            }
+        }
+
+        // --- 2. VIDEO MODE & CV LOGIC ---
+        async function startVideoMode(role, topics) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                document.getElementById('user-video').srcObject = stream;
+                updateVideoStatus("Camera Active", "text-blue-400");
+                
+                // --- ACTIVATE CV HUD ---
+                document.getElementById('cv-overlay').classList.add('active');
+                startCVAnalysis(); 
+            } catch (e) {
+                alert("Camera access denied. Switching to Chat.");
+                location.reload();
+                return;
+            }
+            const introText = `Hi there. I am your AI interviewer for the ${role} role. We will focus on ${topics}. Please introduce yourself when you are ready.`;
+            
+            setTimeout(() => { 
+                updateAISubtitle(introText);
+                speakText(introText, true); 
+            }, 1000);
+        }
+
+        // --- NEW: COMPUTER VISION ANALYSIS ---
+        function startCVAnalysis() {
+            const video = document.getElementById('user-video');
+            const canvas = document.getElementById('cv-canvas');
+            const context = canvas.getContext('2d');
+
+            // Analyze every 1 second (1000ms) to prevent server overload
+            cvInterval = setInterval(async () => {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    // 1. Draw video frame to canvas
+                    canvas.width = 400; // Resize for faster processing
+                    canvas.height = 300;
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    // 2. Convert to Base64
+                    const dataURL = canvas.toDataURL('image/jpeg', 0.7);
+
+                    // 3. Send to Backend
+                    try {
+                        const response = await fetch('/analyze_face', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image: dataURL })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            updateCVUI(data.confidence, data.nervousness, data.dominant_emotion);
+                        }
+                    } catch (e) {
+                        console.log("CV Frame drop", e);
+                    }
+                }
+            }, 1000); 
+        }
+
+        function updateCVUI(conf, nerv, emotion) {
+            // Update Bars
+            document.getElementById('conf-bar').style.width = conf + '%';
+            document.getElementById('nerv-bar').style.width = nerv + '%';
+            
+            // Update Text
+            document.getElementById('conf-val').innerText = conf + '%';
+            document.getElementById('nerv-val').innerText = nerv + '%';
+            
+            // Update Emotion Text
+            const emoText = document.getElementById('emotion-text');
+            emoText.innerText = emotion.toUpperCase();
+            
+            // Dynamic Coloring for text
+            if(emotion === 'happy' || emotion === 'neutral') emoText.className = "text-green-400 font-bold";
+            else if(emotion === 'fear' || emotion === 'sad') emoText.className = "text-red-400 font-bold";
+            else emoText.className = "text-white font-bold";
+        }
+
+        function updateVideoStatus(text, colorClass) {
+            const html = `<span class="w-2 h-2 rounded-full ${colorClass.replace('text-', 'bg-')} animate-pulse"></span> ${text}`;
+            videoStatus.innerHTML = html;
+        }
+
+        function updateAISubtitle(text) {
+            aiSubtitleBox.innerText = text;
+            aiSubtitleBox.style.opacity = '1';
+        }
+
+        function toggleVideoMic() {
+            if (!recognition) return;
+            if (isListening) {
+                recognition.stop();
+            } else {
+                finalTranscript = ''; 
+                recognition.start();
+            }
+        }
+
+        async function submitVideoAnswer() {
+            if(isSpeaking) return; 
+            
+            const message = finalTranscript.trim();
+            if (!message) {
+                alert("Please say something before submitting.");
+                return;
+            }
+
+            recognition.stop();
+            isListening = false;
+            document.getElementById('video-submit-btn').disabled = true;
+            document.getElementById('video-submit-btn').innerText = "Processing...";
+            updateVideoStatus("Processing...", "text-yellow-400");
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+                const data = await response.json();
+                
+                finalTranscript = ''; 
+                userSubtitleBox.innerHTML = '<span class="text-gray-400 italic">Answer submitted. Waiting for AI...</span>';
+
+                if (data.response) {
+                    updateAISubtitle(data.response);
+                    speakText(data.response, true); 
+                } else {
+                    updateAISubtitle("Interview Complete.");
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                document.getElementById('video-submit-btn').disabled = false;
+                document.getElementById('video-submit-btn').innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Answer';
+            }
+        }
+
+        // --- 3. SHARED HELPERS ---
+        function toggleMic() {
+            if (!recognition) return;
+            if (isListening) recognition.stop();
+            else {
+                finalTranscript = '';
+                recognition.start();
+            }
+        }
+
+        function speakText(text, autoListen = false) {
+            synthesis.cancel();
+            isSpeaking = true;
+            aiAvatar.classList.add('talking');
+            updateVideoStatus("AI Speaking...", "text-purple-400");
+            
+            if(isListening && currentMode === 'Video') recognition.stop();
+
+            const utterance = new SpeechSynthesisUtterance(text.replace(/[*#`]/g, ''));
+            if (preferredVoice) utterance.voice = preferredVoice;
+            utterance.rate = 1.1;
+
+            utterance.onend = () => {
+                isSpeaking = false;
+                aiAvatar.classList.remove('talking');
+                if (autoListen && currentMode === 'Video') {
+                    updateVideoStatus("Listening...", "text-green-400");
+                    userSubtitleBox.innerHTML = '<span class="text-gray-400 italic">Listening...</span>';
+                    finalTranscript = '';
+                    try { recognition.start(); } catch(e) {}
+                }
+            };
+            synthesis.speak(utterance);
+        }
+
+        // --- 4. CHAT MODE LOGIC ---
+        function addChatMessage(content, sender) {
+            const isUser = sender === 'user';
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex items-start gap-4 max-w-3xl message-enter ${isUser ? 'ml-auto flex-row-reverse' : 'mr-auto'}`;
+            wrapper.innerHTML = `
+                <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border ${isUser ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-white/10 border-white/20 text-indigo-300'}">
+                    <i class="fa-solid fa-${isUser ? 'user' : 'robot'} text-xs"></i>
+                </div>
+                <div class="p-4 rounded-2xl shadow-sm max-w-[85%] text-sm leading-relaxed ${isUser ? 'glass-bubble-user rounded-tr-none' : 'glass-bubble-bot rounded-tl-none font-medium'}">
+                    <p>${content.replace(/\n/g, '<br>')}</p>
+                </div>`;
+            chatContainer.appendChild(wrapper);
+            chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+        }
+
+        async function sendMessage(e) {
+            if (e) e.preventDefault();
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            addChatMessage(message, 'user');
+            userInput.value = '';
+            userInput.disabled = true; 
+            sendBtn.disabled = true;
+            
+            if(isListening && currentMode === 'Chat') recognition.stop();
+
+            const loadingId = 'loading-' + Date.now();
+            const loadingHTML = `<div id="${loadingId}" class="flex items-center gap-2 ml-12 text-gray-400 text-xs"><i class="fa-solid fa-circle-notch fa-spin"></i> AI is thinking...</div>`;
+            chatContainer.insertAdjacentHTML('beforeend', loadingHTML);
+            chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+                const data = await response.json();
+                document.getElementById(loadingId).remove();
+                
+                if (data.response) {
+                    addChatMessage(data.response, 'bot');
+                    if(voiceEnabled) speakText(data.response);
+                }
+            } catch (err) {
+                const loader = document.getElementById(loadingId);
+                if(loader) loader.remove();
+                addChatMessage("Error connecting to AI.", 'bot');
+            } finally {
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        // --- 5. FEEDBACK LOGIC ---
+        async function generateFeedback() {
+            // STOP CV LOOP
+            if(cvInterval) clearInterval(cvInterval);
+
+            const btn = document.getElementById("finish-btn");
+            btn.innerText = "Analyzing...";
+            btn.disabled = true;
+            if(recognition) recognition.stop();
+            synthesis.cancel();
+            
+            const video = document.getElementById('user-video');
+            if(video.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
+
+            try {
+                const response = await fetch('/feedback');
+                if (!response.ok) throw new Error("Feedback failed");
+                const data = await response.json();
+
+                document.getElementById('feedback-modal').classList.remove('hidden');
+                document.getElementById('feedback-modal').classList.add('flex');
+                
+                const circle = document.getElementById('score-circle');
+                setTimeout(() => { circle.setAttribute('stroke-dasharray', `${data.score}, 100`); }, 100);
+                document.getElementById('score-text').textContent = data.score + "%";
+
+                document.getElementById('feedback-summary').innerText = data.feedback_summary;
+                document.getElementById('strengths-list').innerHTML = data.strengths.map(s => `<li>${s}</li>`).join('');
+                document.getElementById('improvements-list').innerHTML = data.areas_for_improvement.map(s => `<li>${s}</li>`).join('');
+                
+                const badge = document.getElementById('hired-badge');
+                if(data.hired) {
+                    badge.innerText = "HIRED"; badge.className = "px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-bold border border-green-500 mt-4 inline-block";
+                    document.getElementById('score-color').classList.replace('text-red-400', 'text-green-400');
+                } else {
+                    badge.innerText = "NOT HIRED"; badge.className = "px-3 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-bold border border-red-500 mt-4 inline-block";
+                    document.getElementById('score-color').classList.replace('text-green-400', 'text-red-400');
+                }
+            } catch (e) {
+                alert("Error generating feedback. Did you start the conversation?");
+                location.reload();
+            }
+        }
+
+        function closeFeedback() {
+            document.getElementById('feedback-modal').classList.add('hidden');
+            document.getElementById('feedback-modal').classList.remove('flex');
+        }
+    </script>
+</body>
+</html>
