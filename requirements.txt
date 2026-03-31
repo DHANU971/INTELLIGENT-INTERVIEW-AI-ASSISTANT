@@ -1,6 +1,10 @@
 flask
 langchain
+langchain-core
 langchain-groq
 langchain-community
 python-dotenv
+PyPDF2
+opencv-python
+numpy
 

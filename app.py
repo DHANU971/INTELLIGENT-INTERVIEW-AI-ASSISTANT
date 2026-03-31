@@ -221,12 +221,13 @@ def chat():
         return jsonify({"error": "Session expired. Please refresh."}), 400
 
     if user_id not in user_context:
-         user_context[user_id] = {
-            "role": "Software Engineer", 
-            "difficulty": "Medium", 
+        user_context[user_id] = {
+            "role": "Software Engineer",
+            "difficulty": "Medium",
             "topics": "General",
             "mode": "Chat",
             "question_source": "auto",
+            "custom_questions": "",
             "max_questions": 5,
             "resume_text": "",
             "question_count": 0
@@ -234,10 +235,10 @@ def chat():
 
     context = user_context[user_id]
     
-    if context["question_count"] >= context["max_questions"]:
+    if int(context["question_count"]) >= int(context["max_questions"]):
         return jsonify({"response": "Thank you. That concludes the interview session. Please click 'Finish' to generate your feedback report."})
 
-    context["question_count"] += 1
+    context["question_count"] = int(context["question_count"]) + 1
 
     formatted_system = ""
     
@@ -249,7 +250,9 @@ def chat():
     else:
         resume_section = ""
         if context.get("resume_text"):
-            resume_section = f"RESUME CONTENT:\n{context['resume_text'][:3000]}"
+            resume_text_raw: str = str(context.get("resume_text") or "")
+            resume_preview: str = resume_text_raw[:3000]
+            resume_section = f"RESUME CONTENT:\n{resume_preview}"
         
         formatted_system = AUTO_SYSTEM_PROMPT.format(
             role=context["role"],
